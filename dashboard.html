@@ -703,9 +703,9 @@ canvas { display: block; }
 }
 
 .pie-row {
-  display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:6px;
+  display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:6px;
 }
-@media(max-width:1100px){.pie-row{grid-template-columns:repeat(3,1fr);}}
+@media(max-width:900px){.pie-row{grid-template-columns:repeat(2,1fr);}}
 @media(max-width:700px){.pie-row{grid-template-columns:1fr 1fr;}}
 .pie-card {
   background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
@@ -758,7 +758,7 @@ canvas { display: block; }
 .phase-bar-pct{font-size:11.5px;font-weight:700;min-width:36px;text-align:right;}
 .phase-bar-cnt{font-size:10.5px;color:var(--text4);min-width:60px;text-align:right;}
 
-.jf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-bottom:6px;}
+.jf-grid{display:flex;flex-direction:column;gap:0;margin-bottom:6px;}
 .jf-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;}
 .jf-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;line-height:1.3;}
 .jf-bar-track{height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:5px;}
@@ -929,8 +929,8 @@ canvas { display: block; }
         <div class="kpi-lbl">Programs Conducted</div>
         <div class="kpi-foot" id="kpi3sub">Total sessions across all regions</div>
         <div style="margin-top:5px;font-size:11px;color:var(--text3)">
-          <span id="kpi-unique-courses" style="font-weight:700;color:var(--amber)">0</span>
-          <span> unique programs</span>
+          <span id="kpi-unique-courses" style="font-weight:700;color:var(--amber);cursor:pointer;text-decoration:underline;text-decoration-style:dotted" onclick="showUniqueProgramsList()" title="Click to see list">0</span>
+          <span style="cursor:pointer" onclick="showUniqueProgramsList()"> unique programs ↗</span>
         </div>
       </div>
       <div class="kpi" style="--k-color:#5235a0;--k-bg:var(--ho-tint)">
@@ -960,7 +960,7 @@ canvas { display: block; }
     <!-- SECTION 1: CLUSTER PIE CHARTS -->
     <div class="sec" style="margin-top:28px">
       <span class="sec-title">Workforce Coverage — Clusters & Segments</span>
-      <span class="sec-note">Headcount vs Trained vs Absentees · Cross-referenced with HC data</span>
+      <span class="sec-note">Trained vs Untrained · Cross-referenced with HC data</span>
     </div>
     <div class="pie-row" id="pieChartsRow"></div>
     <div id="bankingGrid" style="display:none"></div>
@@ -2268,40 +2268,25 @@ function renderPieCharts() {
 
   const cards = [];
 
-  const totalHc     = totalHcIds.size;
-  const totalTrained= new Set([...trainedIds].filter(id => totalHcIds.has(id))).size;
-  const totalAbs    = Math.max(0, totalHc - totalTrained);
+  const totalHc      = totalHcIds.size;
+  const totalTrained = new Set([...trainedIds].filter(id => totalHcIds.has(id))).size;
+  const totalUntrained = Math.max(0, totalHc - totalTrained);
   cards.push(makePieCard('All Clusters', [
-    {label:'Headcount', val:totalHc},
     {label:'Trained',   val:totalTrained},
-    {label:'Absentees', val:totalAbs}
+    {label:'Untrained', val:totalUntrained}
   ]));
 
   ['conv','ibg','ho'].forEach(seg => {
-    const segHcRows = getBankingHc(seg);
-    const segIds    = new Set(segHcRows.map(e=>nid(e['Employee No.'])).filter(Boolean));
-    const segTrained= new Set([...trainedIds].filter(id=>segIds.has(id))).size;
-    const labels    = {ibg:'Islamic Banking', conv:'Conventional', ho:'Head Office'};
+    const segHcRows  = getBankingHc(seg);
+    const segIds     = new Set(segHcRows.map(e=>nid(e['Employee No.']).filter(Boolean)));
+    const segTrained = new Set([...trainedIds].filter(id=>segIds.has(id))).size;
+    const segUntr    = Math.max(0, segIds.size - segTrained);
+    const labels     = {ibg:'Islamic Banking', conv:'Conventional', ho:'Head Office'};
     cards.push(makePieCard(labels[seg], [
-      {label:'Headcount', val:segIds.size},
-      {label:'Trained',   val:segTrained}
+      {label:'Trained',   val:segTrained},
+      {label:'Untrained', val:segUntr}
     ]));
   });
-
-  const clusterNames = [...new Set(hcRows.map(e=>ns(e['Cluster']||'Unknown')).filter(Boolean))].sort();
-  const biggestCluster = clusterNames.sort((a,b)=>
-    (hcByCluster[b]||new Set()).size - (hcByCluster[a]||new Set()).size
-  )[0];
-  if (biggestCluster) {
-    const clHcIds  = hcByCluster[biggestCluster]||new Set();
-    const clTrained= new Set([...trainedIds].filter(id=>clHcIds.has(id))).size;
-    const clAbs    = Math.max(0, clHcIds.size - clTrained);
-    cards.push(makePieCard(biggestCluster + ' Cluster', [
-      {label:'Headcount', val:clHcIds.size},
-      {label:'Trained',   val:clTrained},
-      {label:'Absentees', val:clAbs}
-    ]));
-  }
 
   container.innerHTML = cards.join('');
 }
@@ -2315,44 +2300,95 @@ function renderJobFamily() {
   const ns  = v => String(v||'').trim();
   const nid = v => ns(v).replace(/\.0$/,'');
 
-  const hcByTitle = {};
+  if (!hcRows.length) {
+    container.innerHTML = '<div style="color:var(--text4);font-size:13px;padding:16px">Upload headcount to see job family coverage.</div>';
+    return;
+  }
+
+  const hcByGroup = {};
+  const hcByGroupTitle = {};
   hcRows.forEach(e => {
+    const g = ns(e['Group'])||'Other';
     const t = ns(e['Functional Title'])||'N/A';
-    if (!hcByTitle[t]) hcByTitle[t] = new Set();
-    hcByTitle[t].add(nid(e['Employee No.']));
+    if (!hcByGroup[g]) hcByGroup[g] = new Set();
+    hcByGroup[g].add(nid(e['Employee No.']));
+    if (!hcByGroupTitle[g]) hcByGroupTitle[g] = {};
+    if (!hcByGroupTitle[g][t]) hcByGroupTitle[g][t] = new Set();
+    hcByGroupTitle[g][t].add(nid(e['Employee No.']));
   });
 
   const trainedByTitle = {};
-  filteredData.filter(isAttended).forEach(r => {
-    const t = ns(r['Functional Title'])||'N/A';
-    if (!trainedByTitle[t]) trainedByTitle[t] = new Set();
-    trainedByTitle[t].add(nid(r['Employee No.']));
+  const trainedIds = new Set(filteredData.filter(isAttended).map(r=>nid(r['Employee No.'])).filter(Boolean));
+  hcRows.forEach(e => {
+    const t = ns(e['Functional Title'])||'N/A';
+    const id = nid(e['Employee No.']);
+    if (trainedIds.has(id)) {
+      if (!trainedByTitle[t]) trainedByTitle[t] = new Set();
+      trainedByTitle[t].add(id);
+    }
   });
 
-  const titles = Object.keys(hcByTitle).filter(t => t && t!=='N/A');
-  const rows = titles.map(t => {
-    const total   = hcByTitle[t].size;
-    const trained = (trainedByTitle[t]||new Set()).size;
-    const pct     = total > 0 ? Math.round(trained/total*100) : 0;
-    return {t, total, trained, pct};
-  }).filter(r=>r.total>0).sort((a,b)=>b.pct-a.pct||b.total-a.total);
+  const groups = Object.keys(hcByGroup).sort();
 
-  if (!rows.length) { container.innerHTML = '<div style="color:var(--text4);font-size:13px;padding:16px">Upload headcount to see job family coverage.</div>'; return; }
+  const html = groups.map(g => {
+    const groupHc      = hcByGroup[g].size;
+    const groupTrained = new Set([...hcByGroup[g]].filter(id=>trainedIds.has(id))).size;
+    const groupPct     = groupHc>0 ? Math.round(groupTrained/groupHc*100) : 0;
+    const gColor       = groupPct>=80?'#0a8f5c':groupPct>=50?'#c47500':'#0175C0';
+    const gid          = 'jfg_'+g.replace(/[^a-z0-9]/gi,'_');
 
-  const maxTotal = Math.max(...rows.map(r=>r.total));
-  container.innerHTML = rows.map(r => {
-    const col = r.pct>=80?'#0a8f5c':r.pct>=50?'#c47500':'#0175C0';
-    return `<div class="jf-card">
-      <div class="jf-title">${r.t}</div>
-      <div class="jf-bar-track">
-        <div class="jf-bar-fill" style="width:${r.pct}%;background:${col}"></div>
+    const titles = Object.keys(hcByGroupTitle[g]).filter(t=>t!=='N/A').sort();
+    const titleRows = titles.map(t => {
+      const tHc      = hcByGroupTitle[g][t].size;
+      const tTrained = (trainedByTitle[t]||new Set()).size;
+      const tPct     = tHc>0?Math.round(tTrained/tHc*100):0;
+      const tColor   = tPct>=80?'#0a8f5c':tPct>=50?'#c47500':'#0175C0';
+      return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
+        <div style="flex:1;font-size:12px;color:var(--text2)">${t}</div>
+        <div style="flex:0 0 120px">
+          <div style="height:5px;background:var(--border);border-radius:3px;overflow:hidden">
+            <div style="height:100%;border-radius:3px;background:${tColor};width:${tPct}%"></div>
+          </div>
+        </div>
+        <div style="font-size:11.5px;font-weight:700;color:${tColor};min-width:36px;text-align:right">${tPct}%</div>
+        <div style="font-size:10.5px;color:var(--text4);min-width:70px;text-align:right">${tTrained}/${tHc}</div>
+      </div>`;
+    }).join('');
+
+    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;overflow:hidden">
+      <div onclick="toggleJfGroup('${gid}')" style="display:flex;align-items:center;gap:14px;padding:14px 16px;cursor:pointer;user-select:none" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
+        <div style="flex:1">
+          <div style="font-size:13.5px;font-weight:700;color:var(--text)">${g}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">${titles.length} job famil${titles.length===1?'y':'ies'} · ${groupHc.toLocaleString()} employees</div>
+        </div>
+        <div style="flex:0 0 160px">
+          <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+            <div style="height:100%;border-radius:3px;background:${gColor};width:${groupPct}%"></div>
+          </div>
+        </div>
+        <div style="font-family:'Sora',sans-serif;font-size:17px;font-weight:800;color:${gColor};min-width:48px;text-align:right">${groupPct}%</div>
+        <div style="font-size:11px;color:var(--text3);min-width:70px;text-align:right">${groupTrained}/${groupHc}</div>
+        <div id="${gid}_arrow" style="color:var(--text4);transition:transform 0.2s;flex-shrink:0">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
       </div>
-      <div class="jf-meta">
-        <span style="font-weight:700;color:${col}">${r.pct}% trained</span>
-        <span>${r.trained.toLocaleString()} of ${r.total.toLocaleString()}</span>
+      <div id="${gid}_body" style="display:none;padding:0 16px 12px">
+        ${titleRows||'<div style="color:var(--text4);font-size:12px;padding:8px 0">No functional titles found.</div>'}
       </div>
     </div>`;
   }).join('');
+
+  container.innerHTML = html ||
+    '<div style="color:var(--text4);font-size:13px;padding:16px">No group data found in headcount.</div>';
+}
+
+function toggleJfGroup(gid) {
+  const body  = document.getElementById(gid+'_body');
+  const arrow = document.getElementById(gid+'_arrow');
+  if (!body) return;
+  const open = body.style.display === 'none';
+  body.style.display  = open ? 'block' : 'none';
+  if (arrow) arrow.style.transform = open ? 'rotate(180deg)' : '';
 }
 
 function renderTrainerLeaderboard() {
@@ -3014,6 +3050,65 @@ function generateSummaryReport(rptData) {
   closeReportBuilder();
 }
 
+function showUniqueProgramsList() {
+  const modal    = document.getElementById('uniqueProgModal');
+  const list     = document.getElementById('uprogList');
+  const subtitle = document.getElementById('uprogSubtitle');
+  if (!modal || !list) return;
+
+  const courses = [...new Set(filteredData.map(r=>norm(r['Course Title'])).filter(Boolean))].sort();
+
+  let programs = [];
+  try { programs = JSON.parse(localStorage.getItem('ubl_programs')||'[]'); } catch(e) {}
+
+  const courseToProgram = {};
+  programs.forEach(prog => {
+    (prog.courses||[]).forEach(co => {
+      courses.forEach(ct => {
+        if (ct.toLowerCase().includes(co.name.toLowerCase())) courseToProgram[ct] = prog.name;
+      });
+    });
+  });
+
+  const grouped = {};
+  const ungrouped = [];
+  courses.forEach(ct => {
+    const p = courseToProgram[ct];
+    if (p) { if (!grouped[p]) grouped[p]=[]; grouped[p].push(ct); }
+    else ungrouped.push(ct);
+  });
+
+  subtitle.textContent = `${courses.length} distinct program${courses.length===1?'':'s'} in current selection`;
+
+  let html = '';
+  Object.keys(grouped).sort().forEach(progName => {
+    html += `<div style="margin-bottom:12px">
+      <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--ubl);margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid var(--border2)">${progName}</div>`;
+    grouped[progName].forEach((ct,i) => {
+      html += `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;${i>0?'border-top:1px solid var(--border)':''}">
+        <span style="font-size:11px;color:var(--text4);min-width:20px;text-align:right">${i+1}</span>
+        <span style="font-size:13px;color:var(--text2)">${ct}</span>
+      </div>`;
+    });
+    html += '</div>';
+  });
+
+  if (ungrouped.length) {
+    html += `<div style="margin-bottom:12px">
+      <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text4);margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid var(--border2)">Other Programs</div>`;
+    ungrouped.forEach((ct,i) => {
+      html += `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;${i>0?'border-top:1px solid var(--border)':''}">
+        <span style="font-size:11px;color:var(--text4);min-width:20px;text-align:right">${i+1}</span>
+        <span style="font-size:13px;color:var(--text2)">${ct}</span>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
+  list.innerHTML = html || '<div style="color:var(--text4);font-size:13px;padding:8px 0">No programs in current selection.</div>';
+  modal.style.display = 'flex';
+}
+
 function tryParse(val) {
   try { return val !== null ? JSON.parse(val) : null; } catch(e) { return null; }
 }
@@ -3118,6 +3213,19 @@ function tryParse(val) {
         </button>
       </div>
     </div>
+  </div>
+</div>
+
+<div id="uniqueProgModal" style="display:none;position:fixed;inset:0;background:rgba(1,40,80,0.55);z-index:2000;align-items:center;justify-content:center;backdrop-filter:blur(3px)">
+  <div style="background:#fff;border-radius:14px;width:100%;max-width:520px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(1,40,80,0.3)">
+    <div style="padding:20px 24px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+      <div>
+        <div style="font-family:'Sora',sans-serif;font-size:16px;font-weight:700;color:var(--text)">Unique Programs</div>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:2px" id="uprogSubtitle">All distinct course titles in current selection</div>
+      </div>
+      <button onclick="document.getElementById('uniqueProgModal').style.display='none'" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text4);line-height:1;padding:4px">✕</button>
+    </div>
+    <div style="overflow-y:auto;padding:12px 24px 20px" id="uprogList"></div>
   </div>
 </div>
 
