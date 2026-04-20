@@ -1,4 +1,22 @@
-const SPREADSHEET_ID = '1FdGv-vtcn-q-c9JTRYnw3wkCEeQoS2TTTjYYcA0ds0o';
+/**
+ * UBL L&D EXECUTIVE DASHBOARD — Google Apps Script Backend
+ *
+ * SETUP:
+ * 1. Open your Google Sheet → Extensions → Apps Script
+ * 2. Replace all content with this file
+ * 3. Deploy → New deployment → Web app
+ *    Execute as: Me  |  Access: Anyone (or Anyone in your org)
+ * 4. Copy the Web App URL → paste into admin.html APPS_SCRIPT_URL
+ *
+ * SHEETS AUTO-CREATED:
+ *   "Data Repository"  - training records
+ *   "Upload Log"       - monthly metadata
+ *   "Headcount"        - current employees
+ *   "Headcount Log"    - HC upload history
+ *   "Program Config"   - program/course definitions
+ */
+
+const SPREADSHEET_ID = '1fw5mdAvmOCB9b70AoGJrZb8MGOMA8MkyND97LlfQvKc';
 
 const DATA_SHEET   = 'Data Repository';
 const LOG_SHEET    = 'Upload Log';
@@ -14,6 +32,10 @@ const DATA_HEADERS = [
   '_month','_quarter','_uploadMonth','_uploadedAt'
 ];
 const LOG_HEADERS = ['Month Label','Record Count','Courses','Clusters','Uploaded At','Uploaded By'];
+
+// ═══════════════════════════════════════════════════
+// ENTRY POINTS
+// ═══════════════════════════════════════════════════
 
 function doPost(e) {
   try {
@@ -57,6 +79,10 @@ function doOptions(e) {
   return ContentService.createTextOutput('')
     .setMimeType(ContentService.MimeType.TEXT);
 }
+
+// ═══════════════════════════════════════════════════
+// GET HANDLERS — called by dashboard on load
+// ═══════════════════════════════════════════════════
 
 function handleGetTrainingData(params) {
   const ss = getSpreadsheet();
@@ -159,6 +185,10 @@ function handleGetPrograms() {
   return { success:true, programs };
 }
 
+// ═══════════════════════════════════════════════════
+// POST HANDLERS — called by admin on upload
+// ═══════════════════════════════════════════════════
+
 function handleUpload(payload) {
   const { monthLabel, rows, isFirstChunk, isFinalChunk, totalRows, uploadedBy } = payload;
   if (!rows || !rows.length) throw new Error('No rows provided.');
@@ -238,6 +268,10 @@ function handleSavePrograms(payload) {
   return { success:true, message:`${(programs||[]).length} programs saved.` };
 }
 
+// ═══════════════════════════════════════════════════
+// HEADCOUNT DELETE HANDLERS
+// ═══════════════════════════════════════════════════
+
 function handleDeleteHeadcount(payload) {
   // Headcount uses a replace model (one active HC), so deleting = clearing the sheet
   // We still accept monthLabel for logging purposes
@@ -262,6 +296,10 @@ function handleClearHeadcount() {
   PropertiesService.getScriptProperties().deleteProperty('resigned_ids');
   return { success:true, message:'All headcount data cleared from Sheets.' };
 }
+
+// ═══════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════
 
 function getSpreadsheet() {
   return SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID)
