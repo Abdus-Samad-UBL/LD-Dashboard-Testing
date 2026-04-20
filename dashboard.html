@@ -1166,6 +1166,7 @@ async function loadDashboard() {
       if (splashEl) splashEl.classList.add('hidden');
       initDashboard();
     } else {
+      if (splashEl) splashEl.classList.add('hidden');
       if (statusDot) statusDot.classList.add('no-data');
       if (statusText) statusText.textContent = 'No data in Google Sheets — upload via Admin Panel';
       if (emptyState) {
@@ -2278,7 +2279,7 @@ function renderPieCharts() {
 
   ['conv','ibg','ho'].forEach(seg => {
     const segHcRows  = getBankingHc(seg);
-    const segIds     = new Set(segHcRows.map(e=>nid(e['Employee No.']).filter(Boolean)));
+    const segIds     = new Set(segHcRows.map(e=>nid(e['Employee No.'])).filter(Boolean));
     const segTrained = new Set([...trainedIds].filter(id=>segIds.has(id))).size;
     const segUntr    = Math.max(0, segIds.size - segTrained);
     const labels     = {ibg:'Islamic Banking', conv:'Conventional', ho:'Head Office'};
